@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Stream Echo</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .video-container {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 1200px; /* Increased max-width */
+            margin-bottom: 20px;
+        }
+        .video-box {
+            border: 2px solid #333;
+            background-color: #000;
+            width: 48%;
+            position: relative;
+        }
+        .video-box video {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+        .video-box h2 {
+            text-align: center;
+            color: #333;
+            margin-top: 0;
+        }
+        #drawingCanvas, #receivingCanvas {
+            display: none; /* Hidden canvases for processing */
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 5px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+        }
+        #startButton { background-color: #4CAF50; color: white; }
+        #stopButton { background-color: #f44336; color: white; }
+        #status { margin-top: 15px; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>Video Stream Echo Client</h1>
+
+    <div class="video-container">
+        <div class="video-box">
+            <h2>Local Feed (Sending)</h2>
+            <video id="localVideo" autoplay muted playsinline></video>
+        </div>
+        <div class="video-box">
+            <h2>Remote Feed (Received from Server)</h2>
+            <video id="remoteVideo" autoplay playsinline></video>
+        </div>
+    </div>
+
+    <canvas id="drawingCanvas"></canvas>
+    <canvas id="receivingCanvas"></canvas>
+
+    <div>
+        <button id="startButton">Start Camera & Stream</button>
+        <button id="stopButton" disabled>Stop Streaming</button>
+    </div>
+    <div id="status">Status: Idle</div>
+
+    <script>
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const statusDiv = document.getElementById('status');
+
+        const drawingCanvas = document.getElementById('drawingCanvas');
+        const drawingContext = drawingCanvas.getContext('2d');
+
+        const receivingCanvas = document.getElementById('receivingCanvas');
+        const receivingContext = receivingCanvas.getContext('2d');
+
+        let isSpeaking = false;
+
+        const speak = (text) => {
+            if (isSpeaking) return;
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            isSpeaking = true;
+
+            utterance.onend = () => {
+                isSpeaking = false;
+            };
+
+            utterance.onerror = () => {
+                isSpeaking = false;
+                console.error("Speech synthesis failed.");
+            };
+
+            window.speechSynthesis.cancel();  // Optional: clear queue
+            window.speechSynthesis.speak(utterance);
+        };
+
+
+
+        let localStream;
+        let webSocket;
+        let sendIntervalId;
+        const FPS = 15; // Frames per second to send
+
+        let remoteStream; // MediaStream for the remote video element
+        let remoteStreamInitialized = false;
+
+        function setupCanvasesAndRemoteStream() {
+            if (localVideo.videoWidth > 0 && localVideo.videoHeight > 0) {
+                drawingCanvas.width = localVideo.videoWidth;
+                drawingCanvas.height = localVideo.videoHeight;
+                receivingCanvas.width = localVideo.videoWidth;
+                receivingCanvas.height = localVideo.videoHeight;
+                console.log(`Canvases sized to: ${drawingCanvas.width}x${drawingCanvas.height}`);
+
+                if (!remoteStreamInitialized) {
+                    remoteStream = receivingCanvas.captureStream(FPS);
+                    remoteVideo.srcObject = remoteStream;
+                    remoteVideo.play().catch(e => console.error("Error playing remote video:", e));
+                    remoteStreamInitialized = true;
+                    console.log("Remote stream initialized from receivingCanvas.");
+                }
+                return true;
+            }
+            console.warn("Video dimensions not yet available for canvas setup.");
+            return false;
+        }
+
+        async function startCamera() {
+            console.log("Attempting to start camera...");
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                localVideo.srcObject = localStream;
+                console.log("Local stream obtained.");
+
+                localVideo.onloadedmetadata = () => {
+                    console.log("Local video metadata loaded. Video dimensions:", localVideo.videoWidth, "x", localVideo.videoHeight);
+                    localVideo.play()
+                        .then(() => {
+                            console.log("Local video playing.");
+                            if (setupCanvasesAndRemoteStream()) {
+                                connectWebSocket();
+                            } else {
+                                console.warn("Dimensions not ready on 'loadedmetadata', will retry or wait for 'canplay'.");
+                                // Attempt to connectWebSocket anyway if it might resolve soon
+                                // or rely on oncanplay to also trigger it.
+                                // A small timeout might also help here if 'canplay' is not reliable.
+                                setTimeout(() => {
+                                    if (setupCanvasesAndRemoteStream()) {
+                                        connectWebSocket();
+                                    } else {
+                                        statusDiv.textContent = "Error: Could not get video dimensions to setup stream.";
+                                        console.error("Failed to setup canvases and remote stream after delay on loadedmetadata.");
+                                    }
+                                }, 200); // short delay
+                            }
+                        })
+                        .catch(e => {
+                            console.error("Error playing local video:", e);
+                            statusDiv.textContent = "Error: Could not play local video.";
+                        });
+                };
+
+                localVideo.oncanplay = () => {
+                    console.log("Local video can play. Video dimensions:", localVideo.videoWidth, "x", localVideo.videoHeight);
+                     // Ensure WebSocket isn't already connected or trying to connect from onloadedmetadata
+                    if ((!webSocket || webSocket.readyState !== WebSocket.OPEN) && localVideo.videoWidth > 0) {
+                        console.log("oncanplay: Attempting to setup canvases and connect WebSocket.");
+                        localVideo.play() // Ensure it's playing
+                        .then(() => {
+                            if (setupCanvasesAndRemoteStream()) {
+                                connectWebSocket();
+                            } else {
+                                 console.error("oncanplay: Failed to setup canvases and remote stream.");
+                            }
+                        }).catch(e => console.error("Error playing local video (oncanplay):", e));
+                    } else {
+                        console.log("oncanplay: WebSocket likely already handled or video dimensions zero.");
+                    }
+                };
+
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                statusDiv.textContent = "Status: Camera active. Waiting for WebSocket...";
+            } catch (error) {
+                console.error("Error accessing media devices.", error);
+                statusDiv.textContent = "Error: Could not access camera. " + error.message;
+                alert("Could not access camera: " + error.message);
+                startButton.disabled = false; // Re-enable button on error
+            }
+        }
+
+        function connectWebSocket() {
+            if (webSocket && (webSocket.readyState === WebSocket.OPEN || webSocket.readyState === WebSocket.CONNECTING)) {
+                console.log(`WebSocket already ${webSocket.readyState === WebSocket.OPEN ? 'connected' : 'connecting'}.`);
+                if(webSocket.readyState === WebSocket.OPEN) {
+                    
+                    startSendingFrames();
+                }
+                return;
+            }
+             if (webSocket) { // Clean up old one if it exists and is not open/connecting
+                console.log(`Cleaning up old WebSocket in state: ${webSocket.readyState}`);
+                webSocket.close();
+            }
+
+
+            const wsUrl = 'ws://localhost:8765';
+            // const wsUrl = "ws://192.168.1.59:8765"
+            console.log(`Attempting to connect to WebSocket: ${wsUrl}`);
+            webSocket = new WebSocket(wsUrl);
+
+            webSocket.onopen = () => {
+                console.log("WebSocket connection established.");
+                speak("Stand straight with your arms outstretched in front of you.")
+                statusDiv.textContent = "Status: Connected to server. Streaming...";
+                startSendingFrames();
+            };
+
+        webSocket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.type === "frame" && data.image && data.image.startsWith('data:image/jpeg;base64,')) {
+                    const imageUrl = data.image;
+                    const img = new Image();
+
+                    img.onload = () => {
+                        if (receivingCanvas.width === 0 || receivingCanvas.height === 0 || receivingCanvas.width !== img.naturalWidth) {
+                            if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                                receivingCanvas.width = img.naturalWidth;
+                                receivingCanvas.height = img.naturalHeight;
+
+                                if (!remoteStreamInitialized && receivingCanvas.width > 0) {
+                                    remoteStream = receivingCanvas.captureStream(FPS);
+                                    remoteVideo.srcObject = remoteStream;
+                                    remoteVideo.play().catch(e => console.error("Error playing remote video after resize in onmessage:", e));
+                                    remoteStreamInitialized = true;
+                                }
+                            }
+                        }
+
+                        if (receivingCanvas.width > 0 && receivingCanvas.height > 0) {
+                            receivingContext.drawImage(img, 0, 0, receivingCanvas.width, receivingCanvas.height);
+                        } else {
+                            console.warn("Skipped drawing to receivingCanvas: dimensions are zero.");
+                        }
+                    };
+
+                    img.onerror = (e) => {
+                        console.error("Error loading received image from server data. Data (first 100 chars):", imageUrl.substring(0, 100), "Error:", e);
+                    };
+
+                    img.src = imageUrl;
+                }
+
+                if (data.status === true) {
+                    console.log("Pose held correctly!");
+                    speak("Great job! Pose complete.");
+                    // You can trigger state transition here if needed
+                } else if (data.status === false) {
+                    // console.log("Still holding pose...");
+                }
+
+            } catch (e) {
+                console.warn("Could not parse WebSocket message as JSON:", event.data);
+            }
+        };
+
+
+            webSocket.onerror = (errorEvent) => {
+                console.error("WebSocket Error:", errorEvent);
+                statusDiv.textContent = "Status: WebSocket error. Check console.";
+            };
+
+            webSocket.onclose = (event) => {
+                console.log(`WebSocket connection closed. Code: ${event.code}, Reason: "${event.reason}", WasClean: ${event.wasClean}`);
+                statusDiv.textContent = `Status: Disconnected. ${event.reason || 'Connection closed.'}`;
+                stopSendingFrames();
+                // Only re-enable start button if it was an unexpected close AND we are not in a deliberately stopped state
+                if (!event.wasClean && stopButton.disabled === false) { // stopButton.disabled is true when explicitly stopped
+                     //startButton.disabled = false; // Let's not do this automatically. User can click start again.
+                }
+                webSocket = null; // Crucial to allow reconnection
+            };
+        }
+
+        function startSendingFrames() {
+            if (!localStream || !localVideo.videoWidth || localVideo.videoWidth === 0) {
+                console.warn("Cannot start sending frames: local stream or video dimensions not ready.");
+                statusDiv.textContent = "Status: Camera ready, but video dimensions not yet available to stream.";
+                setTimeout(startSendingFrames, 300); // Retry shortly
+                return;
+            }
+
+            if (!drawingCanvas.width || drawingCanvas.width === 0) {
+                console.log("Drawing canvas not sized, attempting to size it now before sending frames.");
+                if(!setupCanvasesAndRemoteStream()){
+                    console.error("Failed to setup canvases before sending frames. Aborting send for now.");
+                    setTimeout(startSendingFrames, 300); // Retry shortly
+                    return;
+                }
+            }
+
+            if (sendIntervalId) clearInterval(sendIntervalId);
+            console.log(`Starting to send frames at ${FPS} FPS.`);
+            sendIntervalId = setInterval(() => {
+                if (webSocket && webSocket.readyState === WebSocket.OPEN &&
+                    localVideo.readyState >= 3 && localVideo.videoWidth > 0 && // HAVE_FUTURE_DATA or more
+                    drawingCanvas.width > 0 && drawingCanvas.height > 0) {
+                    try {
+                        drawingContext.drawImage(localVideo, 0, 0, drawingCanvas.width, drawingCanvas.height);
+                        const frameDataUrl = drawingCanvas.toDataURL('image/jpeg', 0.7);
+                        // console.log("Sending frame (size):", frameDataUrl.length);
+                        webSocket.send(frameDataUrl);
+                    } catch (e) {
+                        console.error("Error in sending frame loop:", e);
+                        stopSendingFrames(); // Stop if there's an error here
+                    }
+                } else {
+                    if (!webSocket || webSocket.readyState !== WebSocket.OPEN) {
+                        // console.warn("WebSocket not open. Skipping frame send.");
+                    }
+                    if (localVideo.readyState < 3 || localVideo.videoWidth === 0) {
+                        // console.warn("Local video not ready or no dimensions. Skipping frame send.");
+                    }
+                }
+            }, 1000 / FPS);
+        }
+
+        function stopSendingFrames() {
+            if (sendIntervalId) {
+                clearInterval(sendIntervalId);
+                sendIntervalId = null;
+                console.log("Stopped sending frames.");
+            }
+        }
+
+        function stopStreaming() {
+            console.log("Stop streaming initiated.");
+            stopSendingFrames();
+
+            if (webSocket) {
+                console.log("Closing WebSocket connection.");
+                webSocket.close(1000, "Client Stop Streaming"); // 1000 is normal closure
+            } // onclose handler will set webSocket to null
+
+            if (localStream) {
+                console.log("Stopping local media tracks.");
+                localStream.getTracks().forEach(track => track.stop());
+                localVideo.srcObject = null;
+                localStream = null;
+            }
+
+            if (remoteStream) {
+                console.log("Stopping remote media tracks.");
+                remoteStream.getTracks().forEach(track => track.stop());
+                remoteVideo.srcObject = null;
+                remoteStream = null;
+                remoteStreamInitialized = false;
+            }
+            if(drawingContext) drawingContext.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+            if(receivingContext) receivingContext.clearRect(0, 0, receivingCanvas.width, receivingCanvas.height);
+            console.log("Cleared canvases.");
+
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            statusDiv.textContent = "Status: Stopped.";
+            console.log("Streaming stopped completely.");
+        }
+
+        startButton.addEventListener('click', startCamera);
+        stopButton.addEventListener('click', stopStreaming);
+
+        window.addEventListener('beforeunload', () => {
+            console.log("beforeunload event: cleaning up.");
+            if (webSocket && webSocket.readyState === WebSocket.OPEN) {
+                 webSocket.close(1000, "Page Unloading");
+            }
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>
