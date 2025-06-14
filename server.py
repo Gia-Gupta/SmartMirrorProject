@@ -57,8 +57,33 @@ def is_arms_outstretched(pose_landmarks, tolerance = 0.2):
     is_outstretched = (diff_se < tolerance) and (diff_ew < tolerance)
 
     return is_outstretched, " ".join(feedback_parts)
-    
 
+def is_knee_aligned_with_ankle(pose_landmarks):
+    if not pose_landmarks: return False
+    left_knee = pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_KNEE]
+    left_ankle = pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_ANKLE]
+    right_knee = pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_KNEE]
+    right_ankle = pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_ANKLE]
+
+    return (left_knee.x < left_ankle.x + 0.05)
+    # return (left_knee.x < left_ankle.x + 0.05) and (right_knee.x < right_ankle.x + 0.05)
+
+def calculate_angle(a, b, c):
+    a, b, c = np.array([a.x, a.y]), np.array([b.x, b.y]), np.array([c.x, c.y])
+    ba = a - b
+    bc = c - b
+    cosine = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
+    angle = np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
+    return angle
+
+def is_back_straight(pose_landmarks):
+    if not pose_landmarks: return False
+    nose = pose_landmarks.landmark[mp_pose.PoseLandmark.NOSE]
+    mid_back = pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
+    hip = pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_HIP]
+
+    angle = calculate_angle(nose, mid_back, hip)
+    return abs(angle - 180) < 15  # within 15 degrees of straight
 
 def data_url_to_cv2_img(data_url_string):
     """
