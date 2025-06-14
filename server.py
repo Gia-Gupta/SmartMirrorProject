@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 connected_clients = set()
 
         # Simplified pose check function
-def is_arms_outstretched(pose_landmarks):
+def is_arms_outstretched(pose_landmarks, tolerance = 0.2):
     if not pose_landmarks:
         return False
 
@@ -41,10 +41,23 @@ def is_arms_outstretched(pose_landmarks):
     # logger.info(f"Right Shoulder: {right_shoulder}, Right Elbow: {right_elbow}, Right Wrist: {right_wrist}")
     y1, y2, y3 = left_shoulder.y, left_elbow.y, left_wrist.y
     # y4, y5, y6 = right_shoulder.y, right_elbow.y, right_wrist.y
-    tolerance = 0.2
-    logger.info(f"Y values: {y1}, {y2}, {y3}")
-    return (abs(y1 - y2) < tolerance and abs(y2 - y3) < tolerance)
-    # return (abs(y1 - y2) < tolerance and abs(y2 - y3) < tolerance) and (abs(y4 - y5) < tolerance and abs(y5 - y6) < tolerance)
+    
+    diff_se = abs(y1 - y2) # for shoulder and elbow
+    diff_ew = abs (y2 - y3) # for elbow and wrist
+
+    feedback_parts = []
+
+    if diff_se > tolerance:
+        feedback_parts.append("Try adjusting your elbow! It's not quite level with your shoulder.")
+    if diff_ew > tolerance: 
+        feedback_parts.append("Try adjusting your wrist! It's not quite aligned with your elbow.")
+    if not feedback_parts:
+        feedback_parts.append("Good! Your left arm is nicely outstretched.")
+    
+    is_outstretched = (diff_se < tolerance) and (diff_ew < tolerance)
+
+    return is_outstretched, " ".join(feedback_parts)
+    
 
 
 def data_url_to_cv2_img(data_url_string):
