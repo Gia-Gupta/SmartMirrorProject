@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Text to Speech Prototype</title>
+</head>
+<body>
+  <h1>Text to Speech Prototype</h1>
+
+  <textarea id="text" rows="4" cols="50">This is a test.</textarea><br/>
+
+  <label for="voiceSelect">Choose Voice:</label>
+  <select id="voiceSelect"></select><br/><br/>
+
+  <button onclick="browserTTS()">Play with Browser TTS</button>
+  <button onclick="apiTTS()">Play with API TTS</button>
+
+  <audio id="player" controls></audio>
+
+  <script>
+    let voices = [];
+
+    function populateVoiceList() {
+      voices = speechSynthesis.getVoices();
+      const voiceSelect = document.getElementById('voiceSelect');
+
+      voiceSelect.innerHTML = '';
+
+      voices.forEach((voice, i) => {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = `${voice.name} (${voice.lang})`;
+        voiceSelect.appendChild(option);
+      });
+    }
+
+    populateVoiceList();
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = populateVoiceList;
+    }
+
+    function browserTTS() {
+      const text = document.getElementById('text').value;
+      const utterance = new SpeechSynthesisUtterance(text);
+
+      const voiceSelect = document.getElementById('voiceSelect');
+      const selectedIndex = voiceSelect.value;
+
+      if (voices.length > 0 && selectedIndex) {
+        utterance.voice = voices[selectedIndex];
+      }
+
+      speechSynthesis.speak(utterance);
+    }
+
+    async function apiTTS() {
+      const text = document.getElementById('text').value;
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ text: text })
+      });
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const player = document.getElementById('player');
+      player.src = url;
+      player.play();
+    }
+  </script>
+</body>
+</html>
