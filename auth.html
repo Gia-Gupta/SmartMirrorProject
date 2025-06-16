@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pose Trainer — Login</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+  <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+    <h1 class="text-2xl font-bold mb-6 text-center text-indigo-700">Pose Trainer</h1>
+
+    <div class="flex justify-center mb-4">
+      <button onclick="showTab('login')" class="tab-btn px-4 py-2 border-b-2 border-indigo-500 text-indigo-700 font-semibold">Login</button>
+      <button onclick="showTab('register')" class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-500 font-semibold hover:text-indigo-700">Register</button>
+    </div>
+
+    <!-- Login Form -->
+    <div id="login-tab">
+      <input id="login-username" type="text" placeholder="Username" class="w-full px-4 py-2 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+      <input id="login-password" type="password" placeholder="Password" class="w-full px-4 py-2 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+      <button onclick="login()" class="w-full bg-indigo-600 text-white font-semibold py-2 rounded-lg hover:bg-indigo-700 transition">Login</button>
+    </div>
+
+    <!-- Register Form -->
+    <div id="register-tab" class="hidden">
+      <input id="register-username" type="text" placeholder="Username" class="w-full px-4 py-2 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+      <input id="register-password" type="password" placeholder="Password" class="w-full px-4 py-2 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+      <button onclick="register()" class="w-full bg-indigo-600 text-white font-semibold py-2 rounded-lg hover:bg-indigo-700 transition">Register</button>
+    </div>
+
+    <!-- Status Output -->
+    <div id="userInfo" class="mt-6 text-center text-sm font-medium text-green-600"></div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:5000';
+
+    function showTab(tab) {
+      document.getElementById('login-tab').classList.toggle('hidden', tab !== 'login');
+      document.getElementById('register-tab').classList.toggle('hidden', tab !== 'register');
+
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('border-indigo-500', 'text-indigo-700');
+        btn.classList.add('text-gray-500');
+      });
+      document.querySelector(`[onclick="showTab('${tab}')"]`).classList.add('border-indigo-500', 'text-indigo-700');
+    }
+
+    async function login() {
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value.trim();
+
+      if (!username || !password) return alert('Please enter both fields.');
+
+      const res = await fetch(`${API_BASE}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem('jwt', data.token);
+        window.location.href = 'home.html'; // ✅ Redirect to homepage
+      } else {
+        alert(data.error);
+      }
+    }
+
+    async function register() {
+      const username = document.getElementById('register-username').value.trim();
+      const password = document.getElementById('register-password').value.trim();
+
+      if (!username || !password) return alert('Please enter both fields.');
+
+      const res = await fetch(`${API_BASE}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      alert(data.message || data.error);
+    }
+
+    async function showUserInfo() {
+      const token = localStorage.getItem('jwt');
+      if (!token) return;
+
+      const res = await fetch(`${API_BASE}/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.username) {
+        document.getElementById('userInfo').innerText = `Logged in as: ${data.username}`;
+      }
+    }
+
+    function logout() {
+        localStorage.removeItem('jwt');
+        alert('Logged out');
+        window.location.href = 'auth.html';
+    }
+
+    window.onload = showUserInfo;
+  </script>
+
+</body>
+</html>

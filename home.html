@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pose Trainer — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 h-screen w-screen flex flex-col">
+
+  <!-- 🔵 NAVBAR -->
+  <nav class="bg-indigo-700 text-white px-6 py-4 flex justify-between items-center shadow-md">
+    <div class="text-xl font-bold">Pose Trainer</div>
+    <div id="welcomeUser" class="text-sm"></div>
+    <button onclick="logout()" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg text-sm">Logout</button>
+  </nav>
+
+  <!-- 🔵 MAIN PANEL -->
+  <div class="flex-1 grid grid-rows-[auto_1fr] gap-4 p-6 overflow-auto">
+
+    <!-- 🔸 ACTION BUTTONS -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <button class="text-white font-bold py-4 px-6 rounded-lg text-lg transition-all bg-blue-500 hover:bg-blue-600">📘 Learn</button>
+      <button class="text-white font-bold py-4 px-6 rounded-lg text-lg transition-all bg-green-500 hover:bg-green-600">💪 Practice</button>
+      <button class="text-white font-bold py-4 px-6 rounded-lg text-lg transition-all bg-pink-500 hover:bg-pink-600">😺 MeowMeow</button>
+    </div>
+
+    <!-- 🔸 CHART AREA -->
+    <div class="bg-white rounded-lg shadow p-6 overflow-x-auto">
+      <h2 class="text-lg font-semibold mb-4 text-gray-700">Your Pose Stats</h2>
+      <canvas id="poseChart" class="w-full h-64"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:5000';
+
+    async function fetchUser() {
+      const token = localStorage.getItem('jwt');
+      if (!token) return redirectToLogin();
+
+      const res = await fetch(`${API_BASE}/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const data = await res.json();
+      if (data.username) {
+        document.getElementById('welcomeUser').innerText = `Logged in as: ${data.username}`;
+        renderChart(); // placeholder demo
+      } else {
+        redirectToLogin();
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem('jwt');
+      redirectToLogin();
+    }
+
+    function redirectToLogin() {
+      window.location.href = 'auth.html';
+    }
+
+    function renderChart() {
+      const ctx = document.getElementById('poseChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Warrior II', 'Tree', 'Downward Dog', 'Cat-Cow', 'MeowMeow'],
+          datasets: [{
+            label: 'Time Held (seconds)',
+            data: [12, 9, 15, 7, 5],
+            backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#ec4899']
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            title: { display: false }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: { display: true, text: 'Seconds' }
+            }
+          }
+        }
+      });
+    }
+
+    window.onload = fetchUser;
+  </script>
+</body>
+</html>
