@@ -1,0 +1,33 @@
+import threading 
+
+# thread = program being run 
+# threads - concurrency -> multiple threads running at the same time
+
+'''
+networking 
+receiving at same time
+transmitting at same time
+
+mainfile -> 1 thread
+second thread
+
+
+first sem -> OOP (java) some amount of concurrency
+Systems programming/OS 3rd or 4th semester -> in detail how it works (fork() and multithreading)
+'''
+
+def func():
+    for i in range(10):
+        print(i)
+
+def func2():
+    for i in range(10, 20):
+        print(i)
+
+t1 = threading.Thread(target=func)
+t2 = threading.Thread(target=func2)
+t1.start()  
+t2.start()
+
+t1.join()  # Wait for the thread to finish
+t2.join()  # Wait for the thread to finish

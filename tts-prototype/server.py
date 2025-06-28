@@ -7,7 +7,8 @@ import mediapipe as mp
 import json
 import logging
 
-# Set up MediaPipe pose\mp_pose = mp.solutions.pose
+# Set up MediaPipe pose
+mp_pose = mp.solutions.pose
 pose = mp_pose.Pose()
 mp_drawing = mp.solutions.drawing_utils
 
