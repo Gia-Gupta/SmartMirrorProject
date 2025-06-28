@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pose Feedback System</title>
+    <style>
+        body {
+            background-color: #111;
+            color: #00FFD1;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+        }
+        video, img {
+            border-radius: 10px;
+            width: 400px;
+            margin: 10px;
+        }
+        .feedback {
+            font-size: 1.5em;
+            margin-top: 20px;
+            color: yellow;
+            background-color: #222;
+            padding: 10px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pose Feedback System</h1>
+    <video id="video" autoplay muted playsinline></video>
+    <img id="processed" />
+    <div id="feedback" class="feedback">Loading...</div>
+
+    <script>
+        const video = document.getElementById('video');
+        const processed = document.getElementById('processed');
+        const feedback = document.getElementById('feedback');
+
+        navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+            video.srcObject = stream;
+            const ws = new WebSocket("ws://localhost:8765");
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                processed.src = "data:image/jpeg;base64," + data.image;
+                feedback.innerText = data.feedback;
+                speakFeedback(data.feedback);
+            };
+
+            function sendFrame() {
+                if (ws.readyState === WebSocket.OPEN) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0);
+                    canvas.toBlob(blob => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const base64data = reader.result.split(',')[1];
+                            ws.send(JSON.stringify({ image: base64data }));
+                        };
+                        reader.readAsDataURL(blob);
+                    }, 'image/jpeg');
+                }
+                requestAnimationFrame(sendFrame);
+            }
+
+            sendFrame();
+
+            function speakFeedback(text) {
+                if (!window.speechSynthesis.speaking) {
+                    const msg = new SpeechSynthesisUtterance(text);
+                    msg.rate = 0.9;
+                    speechSynthesis.speak(msg);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+
+
+
+

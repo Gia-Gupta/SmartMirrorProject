@@ -1,17 +1,21 @@
+<<<<<<< HEAD
 from flask import Flask, render_template_string
 from flask_socketio import SocketIO, emit
 import pyttsx3
 import tempfile
 import base64
+=======
+from flask import Flask, render_template
+>>>>>>> b4581d1 (audio with the video feedback)
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-@app.route('/')
+@app.route("/")
 def index():
-    with open('index.html') as f:
-        return render_template_string(f.read())
+    return render_template("index.html")
 
+<<<<<<< HEAD
 @socketio.on('tts_request')
 def handle_tts_request(data):
     text = data['text']
@@ -26,3 +30,8 @@ def handle_tts_request(data):
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
+=======
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5050, debug=True)
+
+>>>>>>> b4581d1 (audio with the video feedback)
